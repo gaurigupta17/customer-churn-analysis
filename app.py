@@ -57,8 +57,35 @@ st.markdown("""
 def load_data():
     db_path = os.path.join("data", "churn_analysis.db")
     if not os.path.exists(db_path):
-        st.error(f"SQLite Database not found at {db_path}. Please run import_data.py first.")
-        st.stop()
+        # Auto-initialize database if not present (helpful for serverless deploys like Streamlit Cloud)
+        st.info("SQLite Database not found. Auto-running the data pipeline to initialize the database...")
+        
+        # Ensure directories exist
+        os.makedirs(os.path.join("data", "raw"), exist_ok=True)
+        os.makedirs(os.path.join("data", "processed"), exist_ok=True)
+        
+        try:
+            import sys
+            # Add root directory to python path to import scripts
+            root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+            if root_dir not in sys.path:
+                sys.path.append(root_dir)
+                
+            from scripts.download_data import download_dataset
+            from scripts.clean_data import clean_dataset
+            from scripts.import_data import import_to_sqlite
+            
+            with st.spinner("Initializing database (Downloading raw data)..."):
+                download_dataset()
+            with st.spinner("Initializing database (Cleaning data)..."):
+                clean_dataset()
+            with st.spinner("Initializing database (Importing to SQLite)..."):
+                import_to_sqlite()
+                
+            st.success("Database initialized successfully!")
+        except Exception as init_err:
+            st.error(f"Failed to auto-initialize SQLite database: {init_err}")
+            st.stop()
     
     conn = sqlite3.connect(db_path)
     # Load entire dataset
