@@ -66,10 +66,16 @@ def load_data():
         
         try:
             import sys
-            # Add root directory to python path to import scripts
-            root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-            if root_dir not in sys.path:
-                sys.path.append(root_dir)
+            # Add both the script's directory and its parent directory to python path
+            # to make sure we find 'scripts/' regardless of whether app.py is run
+            # from the root folder or from the 'dashboard/' subfolder
+            current_dir = os.path.abspath(os.path.dirname(__file__))
+            parent_dir = os.path.abspath(os.path.join(current_dir, ".."))
+            
+            if current_dir not in sys.path:
+                sys.path.append(current_dir)
+            if parent_dir not in sys.path:
+                sys.path.append(parent_dir)
                 
             from scripts.download_data import download_dataset
             from scripts.clean_data import clean_dataset
