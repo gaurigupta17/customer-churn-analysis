@@ -64,29 +64,89 @@ def load_data():
         os.makedirs(os.path.join("data", "raw"), exist_ok=True)
         os.makedirs(os.path.join("data", "processed"), exist_ok=True)
         
+        raw_csv_path = os.path.join("data", "raw", "customer_churn_raw.csv")
+        cleaned_csv_path = os.path.join("data", "processed", "customer_churn_clean.csv")
+        
         try:
-            import sys
-            # Add both the script's directory and its parent directory to python path
-            # to make sure we find 'scripts/' regardless of whether app.py is run
-            # from the root folder or from the 'dashboard/' subfolder
-            current_dir = os.path.abspath(os.path.dirname(__file__))
-            parent_dir = os.path.abspath(os.path.join(current_dir, ".."))
-            
-            if current_dir not in sys.path:
-                sys.path.append(current_dir)
-            if parent_dir not in sys.path:
-                sys.path.append(parent_dir)
+            # 1. Download raw data
+            with st.spinner("Downloading raw customer churn data..."):
+                import urllib.request
+                url = "https://raw.githubusercontent.com/IBM/telco-customer-churn-on-icp4d/master/data/Telco-Customer-Churn.csv"
+                urllib.request.urlretrieve(url, raw_csv_path)
                 
-            from scripts.download_data import download_dataset
-            from scripts.clean_data import clean_dataset
-            from scripts.import_data import import_to_sqlite
-            
-            with st.spinner("Initializing database (Downloading raw data)..."):
-                download_dataset()
-            with st.spinner("Initializing database (Cleaning data)..."):
-                clean_dataset()
-            with st.spinner("Initializing database (Importing to SQLite)..."):
-                import_to_sqlite()
+            # 2. Clean data
+            with st.spinner("Cleaning and standardizing data..."):
+                df_raw = pd.read_csv(raw_csv_path)
+                rename_dict = {
+                    "customerID": "customer_id",
+                    "gender": "gender",
+                    "SeniorCitizen": "senior_citizen",
+                    "Partner": "partner",
+                    "Dependents": "dependents",
+                    "tenure": "tenure",
+                    "PhoneService": "phone_service",
+                    "MultipleLines": "multiple_lines",
+                    "InternetService": "internet_service",
+                    "OnlineSecurity": "online_security",
+                    "OnlineBackup": "online_backup",
+                    "DeviceProtection": "device_protection",
+                    "TechSupport": "tech_support",
+                    "StreamingTV": "streaming_tv",
+                    "StreamingMovies": "streaming_movies",
+                    "Contract": "contract",
+                    "PaperlessBilling": "paperless_billing",
+                    "PaymentMethod": "payment_method",
+                    "MonthlyCharges": "monthly_charges",
+                    "TotalCharges": "total_charges",
+                    "Churn": "churn"
+                }
+                df_raw = df_raw.rename(columns=rename_dict)
+                df_raw['total_charges'] = df_raw['total_charges'].astype(str).str.strip()
+                blank_mask = df_raw['total_charges'] == ''
+                if blank_mask.sum() > 0:
+                    df_raw.loc[blank_mask, 'total_charges'] = '0.0'
+                df_raw['total_charges'] = pd.to_numeric(df_raw['total_charges'])
+                df_raw.to_csv(cleaned_csv_path, index=False)
+                
+            # 3. Create SQLite Database & Import
+            with st.spinner("Creating SQL schema and importing to SQLite database..."):
+                conn = sqlite3.connect(db_path)
+                cursor = conn.cursor()
+                
+                # Execute DDL directly
+                schema_sql = """
+                DROP TABLE IF EXISTS customer_churn;
+                CREATE TABLE customer_churn (
+                    customer_id TEXT PRIMARY KEY,
+                    gender TEXT,
+                    senior_citizen INTEGER,
+                    partner TEXT,
+                    dependents TEXT,
+                    tenure INTEGER,
+                    phone_service TEXT,
+                    multiple_lines TEXT,
+                    internet_service TEXT,
+                    online_security TEXT,
+                    online_backup TEXT,
+                    device_protection TEXT,
+                    tech_support TEXT,
+                    streaming_tv TEXT,
+                    streaming_movies TEXT,
+                    contract TEXT,
+                    paperless_billing TEXT,
+                    payment_method TEXT,
+                    monthly_charges REAL,
+                    total_charges REAL,
+                    churn TEXT
+                );
+                """
+                cursor.executescript(schema_sql)
+                
+                # Insert data
+                df_clean = pd.read_csv(cleaned_csv_path)
+                df_clean.to_sql("customer_churn", conn, if_exists="append", index=False)
+                conn.commit()
+                conn.close()
                 
             st.success("Database initialized successfully!")
         except Exception as init_err:
